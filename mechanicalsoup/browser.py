@@ -4,14 +4,17 @@ import tempfile
 import urllib
 import weakref
 import webbrowser
+from typing import Any, cast
 
 import bs4
 import bs4.dammit
 import requests
+from bs4 import Tag
 
 from .__version__ import __title__, __version__
 from .form import Form
 from .utils import LinkNotFoundError, is_multipart_file_upload
+from ._types import Response
 
 
 class Browser:
@@ -36,15 +39,22 @@ class Browser:
     :param user_agent: Set the user agent header to this value.
 
     """
-    def __init__(self, session=None, soup_config={'features': 'lxml'},
-                 requests_adapters=None,
-                 raise_on_404=False, user_agent=None):
+    def __init__(
+        self,
+        session: requests.Session | None = None,
+        soup_config: dict[str, Any] | None = None,
+        requests_adapters: dict[str, Any] | None = None,
+        raise_on_404: bool = False,
+        user_agent: str | None = None
+    ) -> None:
+        if soup_config is None:
+            soup_config = {'features': 'lxml'}
 
-        self.raise_on_404 = raise_on_404
-        self.session = session or requests.Session()
+        self.raise_on_404: bool = raise_on_404
+        self.session: requests.Session | None = session or requests.Session()
 
         if hasattr(weakref, 'finalize'):
-            self._finalize = weakref.finalize(self.session, self.close)
+            self._finalize: Any = weakref.finalize(self.session, self.close)
         else:   # pragma: no cover
             # Python < 3 does not have weakref.finalize, but these
             # versions accept calling session.close() within __del__
@@ -56,10 +66,10 @@ class Browser:
             for adaptee, adapter in requests_adapters.items():
                 self.session.mount(adaptee, adapter)
 
-        self.soup_config = soup_config or dict()
+        self.soup_config: dict[str, Any] = soup_config or dict()
 
     @staticmethod
-    def __looks_like_html(response):
+    def __looks_like_html(response: Response) -> bool:
         """Guesses entity type when Content-Type header is missing.
         Since Content-Type is not strictly required, some servers leave it out.
         """
@@ -67,7 +77,9 @@ class Browser:
         return text.startswith('<html') or text.startswith('<!doctype')
 
     @staticmethod
-    def add_soup(response, soup_config):
+    def add_soup(
+        response: Response, soup_config: dict[str, Any]
+    ) -> None:
         """Attaches a soup object to a requests response."""
         if ("text/html" in response.headers.get("Content-Type", "") or
                 Browser.__looks_like_html(response)):
@@ -96,7 +108,7 @@ class Browser:
         else:
             response.soup = None
 
-    def set_cookiejar(self, cookiejar):
+    def set_cookiejar(self, cookiejar: Any) -> None:
         """Replaces the current cookiejar in the requests session. Since the
         session handles cookies automatically without calling this function,
         only use this when default cookie handling is insufficient.
@@ -105,13 +117,16 @@ class Browser:
           <https://docs.python.org/3/library/http.cookiejar.html#http.cookiejar.CookieJar>`__
           compatible object.
         """
-        self.session.cookies = cookiejar
+        if self.session:
+            self.session.cookies = cookiejar
 
-    def get_cookiejar(self):
+    def get_cookiejar(self) -> Any:
         """Gets the cookiejar from the requests session."""
-        return self.session.cookies
+        if self.session:
+            return self.session.cookies
+        return None
 
-    def set_user_agent(self, user_agent):
+    def set_user_agent(self, user_agent: str | None) -> None:
         """Replaces the current user agent in the requests session headers."""
         # set a default user_agent if not specified
         if user_agent is None:
@@ -119,9 +134,10 @@ class Browser:
             user_agent = f'{requests_ua} ({__title__}/{__version__})'
 
         # the requests module uses a case-insensitive dict for session headers
-        self.session.headers['User-agent'] = user_agent
+        if self.session:
+            self.session.headers['User-agent'] = user_agent
 
-    def request(self, *args, **kwargs):
+    def request(self, *args: Any, **kwargs: Any) -> Response:
         """Straightforward wrapper around `requests.Session.request
         <http://docs.python-requests.org/en/master/api/#requests.Session.request>`__.
 
@@ -134,11 +150,13 @@ class Browser:
         need an HTTP verb that MechanicalSoup doesn't manage (e.g. MKCOL) for
         example.
         """
-        response = self.session.request(*args, **kwargs)
+        if not self.session:
+            raise RuntimeError("Session is closed")
+        response = cast(Response, self.session.request(*args, **kwargs))
         Browser.add_soup(response, self.soup_config)
         return response
 
-    def get(self, *args, **kwargs):
+    def get(self, *args: Any, **kwargs: Any) -> Response:
         """Straightforward wrapper around `requests.Session.get
         <http://docs.python-requests.org/en/master/api/#requests.Session.get>`__.
 
@@ -146,13 +164,15 @@ class Browser:
             <http://docs.python-requests.org/en/master/api/#requests.Response>`__
             object with a *soup*-attribute added by :func:`add_soup`.
         """
-        response = self.session.get(*args, **kwargs)
+        if not self.session:
+            raise RuntimeError("Session is closed")
+        response = cast(Response, self.session.get(*args, **kwargs))
         if self.raise_on_404 and response.status_code == 404:
             raise LinkNotFoundError()
         Browser.add_soup(response, self.soup_config)
         return response
 
-    def post(self, *args, **kwargs):
+    def post(self, *args: Any, **kwargs: Any) -> Response:
         """Straightforward wrapper around `requests.Session.post
         <http://docs.python-requests.org/en/master/api/#requests.Session.post>`__.
 
@@ -160,11 +180,13 @@ class Browser:
             <http://docs.python-requests.org/en/master/api/#requests.Response>`__
             object with a *soup*-attribute added by :func:`add_soup`.
         """
-        response = self.session.post(*args, **kwargs)
+        if not self.session:
+            raise RuntimeError("Session is closed")
+        response = cast(Response, self.session.post(*args, **kwargs))
         Browser.add_soup(response, self.soup_config)
         return response
 
-    def put(self, *args, **kwargs):
+    def put(self, *args: Any, **kwargs: Any) -> Response:
         """Straightforward wrapper around `requests.Session.put
         <http://docs.python-requests.org/en/master/api/#requests.Session.put>`__.
 
@@ -172,12 +194,16 @@ class Browser:
             <http://docs.python-requests.org/en/master/api/#requests.Response>`__
             object with a *soup*-attribute added by :func:`add_soup`.
         """
-        response = self.session.put(*args, **kwargs)
+        if not self.session:
+            raise RuntimeError("Session is closed")
+        response = cast(Response, self.session.put(*args, **kwargs))
         Browser.add_soup(response, self.soup_config)
         return response
 
     @staticmethod
-    def _get_request_kwargs(method, url, **kwargs):
+    def _get_request_kwargs(
+        method: str, url: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """This method exists to raise a TypeError when a method or url is
         specified in the kwargs.
         """
@@ -186,11 +212,15 @@ class Browser:
         return request_kwargs
 
     @classmethod
-    def get_request_kwargs(cls, form, url=None, **kwargs):
+    def get_request_kwargs(
+        cls, form: Tag, url: str | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
         """Extract input data from the form."""
         method = str(form.get("method", "get"))
-        action = form.get("action")
-        url = urllib.parse.urljoin(url, action)
+        action_val = form.get("action")
+        action = str(action_val) if action_val else None
+        if url is not None or action is not None:
+            url = urllib.parse.urljoin(url or "", action or "")
         if url is None:  # This happens when both `action` and `url` are None.
             raise ValueError('no URL to submit to')
 
@@ -219,7 +249,10 @@ class Browser:
                 continue
 
             if tag.name == "input":
-                if tag.get("type", "").lower() in ("radio", "checkbox"):
+                tag_type = tag.get("type", "")
+                if not isinstance(tag_type, str):
+                    tag_type = ""
+                if tag_type.lower() in ("radio", "checkbox"):
                     if "checked" not in tag.attrs:
                         continue
                     value = tag.get("value", "on")
@@ -234,8 +267,12 @@ class Browser:
                         content = value
                         filename = os.path.basename(getattr(value, "name", ""))
                     else:
-                        content = ""
-                        filename = os.path.basename(value)
+                        if isinstance(value, str):
+                            content = ""
+                            filename = os.path.basename(value)
+                        else:
+                            content = ""
+                            filename = ""
                     # If content is the empty string, we still pass it
                     # for consistency with browsers (see
                     # https://github.com/MechanicalSoup/MechanicalSoup/issues/250).
@@ -246,7 +283,10 @@ class Browser:
                     data.append((name, value))
 
             elif tag.name == "button":
-                if tag.get("type", "").lower() in ("button", "reset"):
+                button_type = tag.get("type", "")
+                if not isinstance(button_type, str):
+                    button_type = ""
+                if button_type.lower() in ("button", "reset"):
                     continue
                 else:
                     data.append((name, tag.get("value", "")))
@@ -286,8 +326,8 @@ class Browser:
             # Requests will switch to "multipart/form-data" only if
             # files pass the `if files:` test, so in this case we use
             # a modified dict that passes the if test even if empty.
-            class DictThatReturnsTrue(dict):
-                def __bool__(self):
+            class DictThatReturnsTrue(dict[Any, Any]):
+                def __bool__(self) -> bool:
                     return True
                 __nonzero__ = __bool__
 
@@ -295,12 +335,18 @@ class Browser:
 
         return cls._get_request_kwargs(method, url, files=files, **kwargs)
 
-    def _request(self, form, url=None, **kwargs):
+    def _request(
+        self, form: Tag, url: str | None = None, **kwargs: Any
+    ) -> Response:
         """Extract input data from the form to pass to a Requests session."""
         request_kwargs = Browser.get_request_kwargs(form, url, **kwargs)
-        return self.session.request(**request_kwargs)
+        if not self.session:
+            raise RuntimeError("Session is closed")
+        return cast(Response, self.session.request(**request_kwargs))
 
-    def submit(self, form, url=None, **kwargs):
+    def submit(
+        self, form: Form | Tag, url: str | None = None, **kwargs: Any
+    ) -> Response:
         """Prepares and sends a form request.
 
         NOTE: To submit a form with a :class:`StatefulBrowser` instance, it is
@@ -325,7 +371,7 @@ class Browser:
         Browser.add_soup(response, self.soup_config)
         return response
 
-    def launch_browser(self, soup):
+    def launch_browser(self, soup: bs4.BeautifulSoup) -> None:
         """Launch a browser to display a page, for debugging purposes.
 
         :param: soup: Page contents to display, supplied as a bs4 soup object.
@@ -334,18 +380,18 @@ class Browser:
             file.write(soup.encode())
         webbrowser.open('file://' + file.name)
 
-    def close(self):
+    def close(self) -> None:
         """Close the current session, if still open."""
         if self.session is not None:
             self.session.cookies.clear()
             self.session.close()
             self.session = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         self._finalize()
 
-    def __enter__(self):
+    def __enter__(self) -> "Browser":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.close()

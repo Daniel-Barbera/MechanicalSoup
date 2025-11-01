@@ -1,8 +1,10 @@
 import copy
 import io
 import warnings
+from typing import Any
 
 from bs4 import BeautifulSoup
+from bs4 import Tag
 
 from .utils import LinkNotFoundError, is_multipart_file_upload
 
@@ -35,15 +37,15 @@ class Form:
     It also handles submit-type elements using :func:`~Form.choose_submit`.
     """
 
-    def __init__(self, form):
+    def __init__(self, form: Tag) -> None:
         if form.name != 'form':
             warnings.warn(
                 f"Constructed a Form from a '{form.name}' instead of a 'form' "
                 " element. This may be an error in a future version of "
                 "MechanicalSoup.", FutureWarning)
 
-        self.form = form
-        self._submit_chosen = False
+        self.form: Tag = form
+        self._submit_chosen: bool = False
 
         # Aliases for backwards compatibility
         # (Included specifically in __init__ to suppress them in Sphinx docs)
@@ -51,7 +53,7 @@ class Form:
         self.input = self.set_input
         self.textarea = self.set_textarea
 
-    def set_input(self, data):
+    def set_input(self, data: dict[str, Any]) -> None:
         """Fill-in a set of fields in a form.
 
         Example: filling-in a login/password form
@@ -67,12 +69,12 @@ class Form:
 
         for (name, value) in data.items():
             i = self.form.find("input", {"name": name})
-            if not i:
+            if not i or not isinstance(i, Tag):
                 raise InvalidFormMethod("No input field named " + name)
             self._assert_valid_file_upload(i, value)
             i["value"] = value
 
-    def uncheck_all(self, name):
+    def uncheck_all(self, name: str) -> None:
         """Remove the *checked*-attribute of all input elements with
         a *name*-attribute given by ``name``.
         """
@@ -80,7 +82,7 @@ class Form:
             if "checked" in option.attrs:
                 del option.attrs["checked"]
 
-    def check(self, data):
+    def check(self, data: dict[str, Any]) -> None:
         """For backwards compatibility, this method handles checkboxes
         and radio buttons in a single call. It will not uncheck any
         checkboxes unless explicitly specified by ``data``, in contrast
@@ -99,7 +101,11 @@ class Form:
                 pass
             raise LinkNotFoundError("No input checkbox/radio named " + name)
 
-    def set_checkbox(self, data, uncheck_other_boxes=True):
+    def set_checkbox(
+        self,
+        data: dict[str, Any],
+        uncheck_other_boxes: bool = True
+    ) -> None:
         """Set the *checked*-attribute of input elements of type "checkbox"
         specified by ``data`` (i.e. check boxes).
 
@@ -149,7 +155,7 @@ class Form:
                         (name, choice)
                     )
 
-    def set_radio(self, data):
+    def set_radio(self, data: dict[str, Any]) -> None:
         """Set the *checked*-attribute of input elements of type "radio"
         specified by ``data`` (i.e. select radio buttons).
 
@@ -178,7 +184,7 @@ class Form:
                     f"No input radio named {name} with choice {value}"
                 )
 
-    def set_textarea(self, data):
+    def set_textarea(self, data: dict[str, Any]) -> None:
         """Set the *string*-attribute of the first textarea element
         specified by ``data`` (i.e. set the text of a textarea).
 
@@ -188,11 +194,11 @@ class Form:
         """
         for (name, value) in data.items():
             t = self.form.find("textarea", {"name": name})
-            if not t:
+            if not t or not isinstance(t, Tag):
                 raise InvalidFormMethod("No textarea named " + name)
             t.string = value
 
-    def set_select(self, data):
+    def set_select(self, data: dict[str, Any]) -> None:
         """Set the *selected*-attribute of the first option element
         specified by ``data`` (i.e. select an option from a dropdown).
 
@@ -206,12 +212,12 @@ class Form:
         """
         for (name, value) in data.items():
             select = self.form.find("select", {"name": name})
-            if not select:
+            if not select or not isinstance(select, Tag):
                 raise InvalidFormMethod("No select named " + name)
 
             # Deselect all options first
             for option in select.find_all("option"):
-                if "selected" in option.attrs:
+                if isinstance(option, Tag) and "selected" in option.attrs:
                     del option.attrs["selected"]
 
             # Wrap individual values in a 1-element tuple.
@@ -225,23 +231,27 @@ class Form:
                 option = select.find("option", {"value": choice})
 
                 # try to find with text instead of value
-                if not option:
-                    option = select.find("option", string=choice)
+                if not option or not isinstance(option, Tag):
+                    option_elem = select.find("option", string=choice)
+                    if isinstance(option_elem, Tag):
+                        option = option_elem
+                    else:
+                        option = None
 
-                if not option:
+                if not option or not isinstance(option, Tag):
                     raise LinkNotFoundError(
                         f'Option {choice} not found for select {name}'
                     )
 
                 option.attrs["selected"] = "selected"
 
-    def __setitem__(self, name, value):
+    def __setitem__(self, name: str, value: Any) -> None:
         """Forwards arguments to :func:`~Form.set`. For example,
         :code:`form["name"] = "value"` calls :code:`form.set("name", "value")`.
         """
         return self.set(name, value)
 
-    def set(self, name, value, force=False):
+    def set(self, name: str, value: Any, force: bool = False) -> None:
         """Set a form element identified by ``name`` to a specified ``value``.
         The type of element (input, textarea, select, ...) does not
         need to be given; it is inferred by the following methods:
@@ -282,7 +292,9 @@ class Form:
             return
         raise LinkNotFoundError("No valid element named " + name)
 
-    def new_control(self, type, name, value, **kwargs):
+    def new_control(
+        self, type: str, name: str, value: Any, **kwargs: Any
+    ) -> Tag:
         """Add a new input element to the form.
 
         The arguments set the attributes of the new element.
@@ -306,7 +318,7 @@ class Form:
         self.form.append(control)
         return control
 
-    def choose_submit(self, submit):
+    def choose_submit(self, submit: Tag | str | None | bool = None) -> None:
         """Selects the input (or button) element to use for form submission.
 
         :param submit: The :class:`bs4.element.Tag` (or just its
@@ -340,8 +352,14 @@ class Form:
 
         # All buttons NOT of type (button,reset) are valid submits
         # Case-insensitive search for type=submit
-        inps = [i for i in self.form.select('input[type="submit" i], button')
-                if i.get("type", "").lower() not in ('button', 'reset')]
+        inps_all = self.form.select('input[type="submit" i], button')
+        inps = []
+        for i in inps_all:
+            if isinstance(i, Tag):
+                i_type = i.get("type", "")
+                if (isinstance(i_type, str) and
+                        i_type.lower() not in ('button', 'reset')):
+                    inps.append(i)
 
         # If no submit specified, choose the first one
         if submit is None and inps:
@@ -372,7 +390,7 @@ class Form:
             )
         self._submit_chosen = True
 
-    def print_summary(self):
+    def print_summary(self) -> None:
         """Print a summary of the form.
 
         May help finding which fields need to be filled-in.
@@ -387,7 +405,7 @@ class Form:
                     subtag.string = subtag.string.strip()
             print(input_copy)
 
-    def _assert_valid_file_upload(self, tag, value):
+    def _assert_valid_file_upload(self, tag: Tag, value: Any) -> None:
         """Raise an exception if a multipart file input is not an open file."""
         if (
             is_multipart_file_upload(self.form, tag) and

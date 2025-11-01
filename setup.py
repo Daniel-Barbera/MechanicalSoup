@@ -78,6 +78,7 @@ setup(
     ],
 
     packages=['mechanicalsoup'],
+    package_data={'mechanicalsoup': ['py.typed']},
 
     # List run-time dependencies here. These will be installed by pip
     # when your project is installed. For an analysis of

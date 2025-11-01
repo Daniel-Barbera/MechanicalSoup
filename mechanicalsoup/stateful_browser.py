@@ -1,22 +1,32 @@
 import re
 import sys
 import urllib
+from typing import Any, cast
 
 import bs4
+from bs4 import Tag
+import requests
 
 from .browser import Browser
 from .form import Form
 from .utils import LinkNotFoundError
+from ._types import Response
 
 from requests.structures import CaseInsensitiveDict
 
 
 class _BrowserState:
-    def __init__(self, page=None, url=None, form=None, request=None):
-        self.page = page
-        self.url = url
-        self.form = form
-        self.request = request
+    def __init__(
+        self,
+        page: bs4.BeautifulSoup | None = None,
+        url: str | None = None,
+        form: Form | None = None,
+        request: requests.PreparedRequest | None = None
+    ) -> None:
+        self.page: bs4.BeautifulSoup | None = page
+        self.url: str | None = url
+        self.form: Form | None = form
+        self.request: requests.PreparedRequest | None = request
 
 
 class StatefulBrowser(Browser):
@@ -56,11 +66,11 @@ class StatefulBrowser(Browser):
     using :func:`~Browser.close`.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.__debug = False
-        self.__verbose = 0
-        self.__state = _BrowserState()
+        self.__debug: bool = False
+        self.__verbose: int = 0
+        self.__state: _BrowserState = _BrowserState()
 
         # Aliases for backwards compatibility
         # (Included specifically in __init__ to suppress them in Sphinx docs)
@@ -70,7 +80,7 @@ class StatefulBrowser(Browser):
         self.get_current_form = lambda: self.__state.form
         self.get_url = lambda: self.url
 
-    def set_debug(self, debug):
+    def set_debug(self, debug: bool) -> None:
         """Set the debug mode (off by default).
 
         Set to True to enable debug mode. When active, some actions
@@ -79,11 +89,11 @@ class StatefulBrowser(Browser):
         """
         self.__debug = debug
 
-    def get_debug(self):
+    def get_debug(self) -> bool:
         """Get the debug mode (off by default)."""
         return self.__debug
 
-    def set_verbose(self, verbose):
+    def set_verbose(self, verbose: int) -> None:
         """Set the verbosity level (an integer).
 
         * 0 means no verbose output.
@@ -92,22 +102,22 @@ class StatefulBrowser(Browser):
         """
         self.__verbose = verbose
 
-    def get_verbose(self):
+    def get_verbose(self) -> int:
         """Get the verbosity level. See :func:`set_verbose()`."""
         return self.__verbose
 
     @property
-    def page(self):
+    def page(self) -> bs4.BeautifulSoup | None:
         """Get the current page as a soup object."""
         return self.__state.page
 
     @property
-    def url(self):
+    def url(self) -> str | None:
         """Get the URL of the currently visited page."""
         return self.__state.url
 
     @property
-    def form(self):
+    def form(self) -> Form:
         """Get the currently selected form as a :class:`Form` object.
         See :func:`select_form`.
         """
@@ -115,25 +125,28 @@ class StatefulBrowser(Browser):
             raise AttributeError("No form has been selected yet on this page.")
         return self.__state.form
 
-    def __setitem__(self, name, value):
+    def __setitem__(self, name: str, value: Any) -> None:
         """Call item assignment on the currently selected form.
         See :func:`Form.__setitem__`.
         """
         self.form[name] = value
 
-    def new_control(self, type, name, value, **kwargs):
+    def new_control(
+        self, type: str, name: str, value: Any, **kwargs: Any
+    ) -> Tag:
         """Call :func:`Form.new_control` on the currently selected form."""
         return self.form.new_control(type, name, value, **kwargs)
 
-    def absolute_url(self, url):
-        """Return the absolute URL made from the current URL and ``url``.
+    def absolute_url(self, url: str) -> str:
+        """Return the absolute URL made from from the current URL and ``url``.
         The current URL is only used to provide any missing components of
         ``url``, as in the `.urljoin() method of urllib.parse
         <https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urljoin>`__.
         """
-        return urllib.parse.urljoin(self.url, url)
+        current_url = self.url or ""
+        return urllib.parse.urljoin(current_url, url)
 
-    def open(self, url, *args, **kwargs):
+    def open(self, url: str, *args: Any, **kwargs: Any) -> Response:
         """Open the URL and store the Browser's state in this object.
         All arguments are forwarded to :func:`Browser.get`.
 
@@ -150,7 +163,12 @@ class StatefulBrowser(Browser):
                                      request=resp.request)
         return resp
 
-    def open_fake_page(self, page_text, url=None, soup_config=None):
+    def open_fake_page(
+        self,
+        page_text: str,
+        url: str | None = None,
+        soup_config: dict[str, Any] | None = None
+    ) -> None:
         """Mock version of :func:`open`.
 
         Behave as if opening a page whose text is ``page_text``, but do not
@@ -162,13 +180,15 @@ class StatefulBrowser(Browser):
             page=bs4.BeautifulSoup(page_text, **soup_config),
             url=url)
 
-    def open_relative(self, url, *args, **kwargs):
+    def open_relative(
+        self, url: str, *args: Any, **kwargs: Any
+    ) -> Response:
         """Like :func:`open`, but ``url`` can be relative to the currently
         visited page.
         """
         return self.open(self.absolute_url(url), *args, **kwargs)
 
-    def refresh(self):
+    def refresh(self) -> Response:
         """Reload the current page with the same request as originally done.
         Any change (`select_form`, or any value filled-in in the form) made to
         the current page before refresh is discarded.
@@ -183,13 +203,15 @@ class StatefulBrowser(Browser):
                              'page is opened or low-level browser methods '
                              'were used to do so')
 
-        resp = self.session.send(old_request)
+        if not self.session:
+            raise RuntimeError("Session is closed")
+        resp = cast(Response, self.session.send(old_request))
         Browser.add_soup(resp, self.soup_config)
         self.__state = _BrowserState(page=resp.soup, url=resp.url,
                                      request=resp.request)
         return resp
 
-    def select_form(self, selector="form", nr=0):
+    def select_form(self, selector: str | Tag = "form", nr: int = 0) -> Form:
         """Select a form in the current page.
 
         :param selector: CSS selector or a bs4.element.Tag object to identify
@@ -208,7 +230,7 @@ class StatefulBrowser(Browser):
             retrieved later with the :attr:`form` attribute.
         """
 
-        def find_associated_elements(form_id):
+        def find_associated_elements(form_id: str) -> list[Tag]:
             """Find all elements associated to a form
                 (i.e. an element with a form attribute -> ``form=form_id``)
             """
@@ -218,11 +240,16 @@ class StatefulBrowser(Browser):
                                         "object", "output", "select",
                                         "textarea")
 
-            found_elements = []
+            found_elements: list[Tag] = []
+
+            page = self.page
+            if not page:
+                return found_elements
 
             for element in elements_with_owner_form:
                 found_elements.extend(
-                    self.page.find_all(element, form=form_id)
+                    [e for e in page.find_all(element, form=form_id)
+                     if isinstance(e, Tag)]
                 )
             return found_elements
 
@@ -232,8 +259,10 @@ class StatefulBrowser(Browser):
             form = selector
         else:
             # nr is a 0-based index for consistency with mechanize
-            found_forms = self.page.select(selector,
-                                           limit=nr + 1)
+            page = self.page
+            if not page:
+                raise LinkNotFoundError("No page loaded")
+            found_forms = page.select(selector, limit=nr + 1)
             if len(found_forms) != nr + 1:
                 if self.__debug:
                     print('select_form failed for', selector)
@@ -243,15 +272,17 @@ class StatefulBrowser(Browser):
             form = found_forms[-1]
 
         if form and form.has_attr('id'):
-            form_id = form["id"]
-            new_elements = find_associated_elements(form_id)
-            form.extend(new_elements)
+            form_id_val = form["id"]
+            if isinstance(form_id_val, str):
+                form_id = form_id_val
+                new_elements = find_associated_elements(form_id)
+                form.extend(new_elements)
 
         self.__state.form = Form(form)
 
         return self.form
 
-    def _merge_referer(self, **kwargs):
+    def _merge_referer(self, **kwargs: Any) -> dict[str, Any]:
         """Helper function to set the Referer header in kwargs passed to
         requests, if it has not already been overridden by the user."""
 
@@ -262,8 +293,12 @@ class StatefulBrowser(Browser):
             kwargs['headers'] = headers
         return kwargs
 
-    def submit_selected(self, btnName=None, update_state=True,
-                        **kwargs):
+    def submit_selected(
+        self,
+        btnName: Tag | str | None | bool = None,
+        update_state: bool = True,
+        **kwargs: Any
+    ) -> Response:
         """Submit the form that was selected with :func:`select_form`.
 
         :return: Forwarded from :func:`Browser.submit`.
@@ -283,14 +318,16 @@ class StatefulBrowser(Browser):
         self.form.choose_submit(btnName)
 
         kwargs = self._merge_referer(**kwargs)
-        resp = self.submit(self.__state.form, url=self.__state.url,
-                           **kwargs)
+        form_obj = self.__state.form
+        if not form_obj:
+            raise AttributeError("No form has been selected")
+        resp = self.submit(form_obj, url=self.__state.url, **kwargs)
         if update_state:
             self.__state = _BrowserState(page=resp.soup, url=resp.url,
                                          request=resp.request)
         return resp
 
-    def list_links(self, *args, **kwargs):
+    def list_links(self, *args: Any, **kwargs: Any) -> None:
         """Display the list of links in the current page. Arguments are
         forwarded to :func:`links`.
         """
@@ -298,7 +335,13 @@ class StatefulBrowser(Browser):
         for link in self.links(*args, **kwargs):
             print("    ", link)
 
-    def links(self, url_regex=None, link_text=None, *args, **kwargs):
+    def links(
+        self,
+        url_regex: str | None = None,
+        link_text: str | None = None,
+        *args: Any,
+        **kwargs: Any
+    ) -> list[Tag]:
         """Return links in the page, as a list of bs4.element.Tag objects.
 
         To return links matching specific criteria, specify ``url_regex``
@@ -307,17 +350,24 @@ class StatefulBrowser(Browser):
         the `.find_all() method in BeautifulSoup
         <https://www.crummy.com/software/BeautifulSoup/bs4/doc/#find-all>`__.
         """
-        all_links = self.page.find_all(
-            'a', href=True, *args, **kwargs)
+        page = self.page
+        if not page:
+            return []
+        all_links = page.find_all('a', href=True, *args, **kwargs)
+        result: list[Tag] = [
+            link for link in all_links if isinstance(link, Tag)
+        ]
         if url_regex is not None:
-            all_links = [a for a in all_links
-                         if re.search(url_regex, a['href'])]
+            result = [
+                a for a in result
+                if (isinstance(a['href'], str) and
+                    re.search(url_regex, a['href']))
+            ]
         if link_text is not None:
-            all_links = [a for a in all_links
-                         if a.text == link_text]
-        return all_links
+            result = [a for a in result if a.text == link_text]
+        return result
 
-    def find_link(self, *args, **kwargs):
+    def find_link(self, *args: Any, **kwargs: Any) -> Tag:
         """Find and return a link, as a bs4.element.Tag object.
 
         The search can be refined by specifying any argument that is accepted
@@ -331,7 +381,12 @@ class StatefulBrowser(Browser):
         else:
             return links[0]
 
-    def _find_link_internal(self, link, args, kwargs):
+    def _find_link_internal(
+        self,
+        link: Tag | str | None,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any]
+    ) -> Tag:
         """Wrapper around find_link that deals with convenience special-cases:
 
         * If ``link`` has an *href*-attribute, then return it. If not,
@@ -340,7 +395,7 @@ class StatefulBrowser(Browser):
         * If searching for the link fails and debug is active, launch
           a browser.
         """
-        if hasattr(link, 'attrs') and 'href' in link.attrs:
+        if isinstance(link, Tag) and 'href' in link.attrs:
             return link
 
         # Check if "link" parameter should be treated as "url_regex"
@@ -361,8 +416,14 @@ class StatefulBrowser(Browser):
                 self.launch_browser()
             raise
 
-    def follow_link(self, link=None, *bs4_args, bs4_kwargs={},
-                    requests_kwargs={},  **kwargs):
+    def follow_link(
+        self,
+        link: Tag | str | None = None,
+        *bs4_args: Any,
+        bs4_kwargs: dict[str, Any] = {},
+        requests_kwargs: dict[str, Any] = {},
+        **kwargs: Any
+    ) -> Response:
         """Follow a link.
 
         If ``link`` is a bs4.element.Tag (i.e. from a previous call to
@@ -383,15 +444,25 @@ class StatefulBrowser(Browser):
 
         :return: Forwarded from :func:`open_relative`.
         """
-        link = self._find_link_internal(link, bs4_args,
-                                        {**bs4_kwargs, **kwargs})
+        link_tag = self._find_link_internal(link, bs4_args,
+                                            {**bs4_kwargs, **kwargs})
 
         requests_kwargs = self._merge_referer(**requests_kwargs)
 
-        return self.open_relative(link['href'], **requests_kwargs)
+        href = link_tag['href']
+        if isinstance(href, list):
+            href = href[0] if href else ""
+        return self.open_relative(str(href), **requests_kwargs)
 
-    def download_link(self, link=None, file=None, *bs4_args, bs4_kwargs={},
-                      requests_kwargs={}, **kwargs):
+    def download_link(
+        self,
+        link: Tag | str | None = None,
+        file: str | None = None,
+        *bs4_args: Any,
+        bs4_kwargs: dict[str, Any] = {},
+        requests_kwargs: dict[str, Any] = {},
+        **kwargs: Any
+    ) -> requests.Response:
         """Downloads the contents of a link to a file. This function behaves
         similarly to :func:`follow_link`, but the browser state will
         not change when calling this function.
@@ -409,12 +480,17 @@ class StatefulBrowser(Browser):
             <http://docs.python-requests.org/en/master/api/#requests.Response>`__
             object.
         """
-        link = self._find_link_internal(link, bs4_args,
-                                        {**bs4_kwargs, **kwargs})
-        url = self.absolute_url(link['href'])
+        link_tag = self._find_link_internal(link, bs4_args,
+                                            {**bs4_kwargs, **kwargs})
+        href = link_tag['href']
+        if isinstance(href, list):
+            href = href[0] if href else ""
+        url = self.absolute_url(str(href))
 
         requests_kwargs = self._merge_referer(**requests_kwargs)
 
+        if not self.session:
+            raise RuntimeError("Session is closed")
         response = self.session.get(url, **requests_kwargs)
         if self.raise_on_404 and response.status_code == 404:
             raise LinkNotFoundError()
@@ -426,7 +502,7 @@ class StatefulBrowser(Browser):
 
         return response
 
-    def launch_browser(self, soup=None):
+    def launch_browser(self, soup: bs4.BeautifulSoup | None = None) -> None:
         """Launch a browser to display a page, for debugging purposes.
 
         :param: soup: Page contents to display, supplied as a bs4 soup object.
@@ -434,4 +510,6 @@ class StatefulBrowser(Browser):
         """
         if soup is None:
             soup = self.page
+        if soup is None:
+            raise ValueError("No page to display")
         super().launch_browser(soup)
