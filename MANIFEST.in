@@ -3,3 +3,4 @@ recursive-include tests *.py
 include examples/example*.py
 include requirements.txt tests/requirements.txt
 include docs/*
+include mechanicalsoup/py.typed

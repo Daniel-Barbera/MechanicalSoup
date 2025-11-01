@@ -1,3 +1,6 @@
+from bs4 import Tag
+
+
 class LinkNotFoundError(Exception):
     """Exception raised when mechanicalsoup fails to find something.
 
@@ -16,8 +19,12 @@ class LinkNotFoundError(Exception):
     pass
 
 
-def is_multipart_file_upload(form, tag):
+def is_multipart_file_upload(form: Tag, tag: Tag) -> bool:
+    enctype = form.get("enctype", "")
+    tag_type = tag.get("type", "")
+    if not isinstance(enctype, str) or not isinstance(tag_type, str):
+        return False
     return (
-        form.get("enctype", "") == "multipart/form-data" and
-        tag.get("type", "").lower() == "file"
+        enctype == "multipart/form-data" and
+        tag_type.lower() == "file"
     )
