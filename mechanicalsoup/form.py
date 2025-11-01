@@ -233,10 +233,8 @@ class Form:
                 # try to find with text instead of value
                 if not option or not isinstance(option, Tag):
                     option_elem = select.find("option", string=choice)
-                    if isinstance(option_elem, Tag):
-                        option = option_elem
-                    else:
-                        option = None
+                    option = (option_elem if isinstance(option_elem, Tag)
+                              else None)
 
                 if not option or not isinstance(option, Tag):
                     raise LinkNotFoundError(

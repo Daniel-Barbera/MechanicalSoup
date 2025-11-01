@@ -217,10 +217,9 @@ class Browser:
     ) -> dict[str, Any]:
         """Extract input data from the form."""
         method = str(form.get("method", "get"))
-        action_val = form.get("action")
-        action = str(action_val) if action_val else None
-        if url is not None or action is not None:
-            url = urllib.parse.urljoin(url or "", action or "")
+        action = str(form.get("action", ""))
+        if url is not None or action:
+            url = urllib.parse.urljoin(url or "", action)
         if url is None:  # This happens when both `action` and `url` are None.
             raise ValueError('no URL to submit to')
 
@@ -263,16 +262,14 @@ class Browser:
                 # If the enctype is not multipart, the filename is put in
                 # the form as a text input and the file is not sent.
                 if is_multipart_file_upload(form, tag):
+                    content = ""
                     if isinstance(value, io.IOBase):
                         content = value
                         filename = os.path.basename(getattr(value, "name", ""))
+                    elif isinstance(value, str):
+                        filename = os.path.basename(value)
                     else:
-                        if isinstance(value, str):
-                            content = ""
-                            filename = os.path.basename(value)
-                        else:
-                            content = ""
-                            filename = ""
+                        filename = ""
                     # If content is the empty string, we still pass it
                     # for consistency with browsers (see
                     # https://github.com/MechanicalSoup/MechanicalSoup/issues/250).
